@@ -19,7 +19,7 @@ This function should calculate likelihood for a single observation for a matrix 
 
 Posterior calculation is done internally by automatically combining the functions 2 and 3 from above listing. However, this function exists as the public method \$posterior and is thus at your mercy if you want to fiddle with it. E.g. I use it in some example to construct a grid approximation of the posterior to compare it with the Monte Carlo approximation.
 
-During rejuvenation proposals are sampled from unconstrained space. In the case of models with highly constrained priors one might want to apply transformations so that the acceptance probability would be, well, acceptable. These transformations, if they are non-linear, require Jacobian adjustments. 
+During rejuvenation proposals are sampled from unconstrained space. In the case of models with highly constrained priors one might want to apply transformations so that the acceptance probability would be, well, acceptable. These transformations, if they are non-linear, require Jacobian adjustments. The basic idea is demonstrated in the Binomial example. 
 
 ## Example models
 
@@ -52,3 +52,15 @@ a \~ normal(0, 10)
 b \~ normal(0, 10)
 
 sigma \~ gamma(3, 1)
+
+### Binomial model
+
+This example is crafted as an example of how to include Jacobian adjustments to your model. The model in itself is a simple binomial model in which...
+
+y \~ Binomial(theta)
+
+...but the catch is that theta is non-linearly transformed such that
+
+plogis(theta) \~ Beta(3, 3)
+
+In order for the algorithm to converge to the correct posterior, the Jacobian has to be included in the model.
