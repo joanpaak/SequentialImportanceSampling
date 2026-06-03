@@ -40,3 +40,15 @@ y \~ normal(mu, sigma)
 mu \~ normal(0, 10)
 
 sigma \~ gamma(3, 1)
+
+### Linear regression
+
+Standard linear regression with gaussian errors.
+
+y \~ normal(a + bx, sigma)
+
+a \~ normal(0, 10)
+
+b \~ normal(0, 10)
+
+sigma \~ gamma(3, 1)
