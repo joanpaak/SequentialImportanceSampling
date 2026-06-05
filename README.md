@@ -71,8 +71,9 @@ This example demonstrates non-linear transformations and how to apply Jacobian a
 
 The model is...
 
-y ~ categorical(phi)
-phi ~ dirichlet(3, 4, 5)
+y \~ categorical(phi)
+
+phi \~ dirichlet(3, 4, 5)
 
 Because during the rejuvenation step proposals are drawn from a multidimensional normal distribution, it is almost certain that none of the proposals are unit simplexes, and so the prior probability of each proposal would by default be zero. 
 
