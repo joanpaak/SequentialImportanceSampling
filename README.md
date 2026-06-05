@@ -1,6 +1,16 @@
 
 # Sequential Importance Sampling with Tempering
 
+An R6 class for performing sequential importance sampling for approximating Bayesian posterior distiributions with weighted random numbers (particles). 
+
+In sequential importance sampling observations are added to the algorithm one-by-one and during each step the weights are updated using the likelihood. This will often lead to only a few particles having significant weight. This phenomenon, known as particle degeneracy, is countered by adding rejuvenation steps into the algorithm.
+
+During these rejuvenation steps proposed new particles are generated from a multidimensional normal distribution with means and variances corresponding to the current posterior. Acceptance probabilities are calculated using an independent Metropolis-Hastings kernel. Given that the posterior is sufficiently good approximation of the true posterior, a single application of this process should be enough to rejuvenate the particles.
+
+In some models, however, a single observation might collapse the weights in such a way that the rejuvenation step is unable to "reset" the particles. In these cases I use tempering. 
+
+During tempering, the likelihood is raised to some fractinal power, L(y | theta)^(1/k) and applied k times. Rejuvenation steps are performed inside this tempering loop.
+
 ## Quick start
 
 First, instantiate a new SIS object. To do that, you need three functions: 
