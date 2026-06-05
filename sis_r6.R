@@ -1,3 +1,83 @@
+# R6 class for sequential importance sampling with optional rejuvenation steps
+# and tempering.
+#
+# CALLING THE CONSTRUCTOR
+#
+# MANDATORY INPUTS:
+# draw_from_prior : function with one parameter n, should return a matrix of draws
+#                   from the prior with parameters on columns.
+# prior           : function for calculating the prior probability density for a matrix
+#                   of draws from the prior. Should return a vector containing p(theta)
+#                   for each row of the supplied matrix of draws.
+# likelihood      : function for calculating likelihood of a single observation given a
+#                   matrix of draws from the posterior. Should return a vector containing
+#                   p(y|theta) for each row of the supplied matrix of draws.
+# n_particles     : integer, the number of particles to use.
+#
+# OPTIONAL INPUTS:
+# opt             : List of options to set. The settable options are:
+# opt$k           : integer, a pre-set number of tempering steps.
+# opt$auto_adjust_k : boolean, should k be adjusted automatically.
+# opt$min_k         : integer, minimum number of tempering steps if auto-adjusting is used.
+# opt$max_k         : integer, maximum number of tempering steps if auto-adjusting is used.
+# opt$resampling_limit : number between 0 and 1. If n_eff/n_particles falls below this, 
+#                        a rejuvenation step is performed.
+# opt$tempering_limit  : number between 0 and 1. if n_eff/n_particles falls below this, the 
+#                        observation is added with tempering.
+# opt$logging          : boolean, should logging be done. E.g. particle set saved on each iteration,
+#                        number of proposals be saved, when temperng was used and so on.
+#
+# METHODS
+# 
+# add_observation(y) : adds a single new observation. If your observations are vectors, 
+#                      e.g. in linear regression observation pairs, each row of y
+#                      should correspond to a single observation. Set the optional argument
+#                      force_tempering to TRUE if you want to... force tempering!
+#                      Adds the observation to an internal data matrix that's referenced 
+#                      during rejuvenation.
+# get_iid_sample()   : samples from the current posterior using the current weights
+# get_marginal_mus() : returns marginal means calculated using current weights
+# get_marginal_sds() : returns marginal sds calculated using current weights
+#
+# The following methods are typically used internally but can be useful for debugging or otherise
+# resample_and_move() : resamples using multinomial resampling, generates proposals and accepts them
+#                       according to their posterior probability
+# add_observation_with_tempering(y) : Same as above with tempering. NOTE: DOES NOT ADD THE OBSERVATION
+#                                     TO THE INTERNAL DATA MATRIX THAT IS USED FOR CALCULATING ACCEPTANCE
+#                                     PROBABILITIES. Use add_observation with the argument force_temperin = 
+#                                     TRUE if you want to add observation by hand and have tempering used.
+# posterior(theta, y) : calculation of posterior probabilities. 
+#
+# EXAMPLE:
+# Gaussian model with known variance...
+#
+# y ~ normal(mu, 1.0)
+# mu ~ normal(0, 1)
+#
+# ...would be set up like this:
+#
+# sis = SIS$new(
+#   draw_from_prior = function(n){
+#     return(cbind(rnorm(n)))
+#   },
+#   prior = function(theta){
+#     return(dnorm(theta[,1]))
+#   },
+#   likelihood = function(y, theta){
+#     return(dnorm(y[1,1], theta[,1], 1.0))
+#   },
+#   n_particles = 1000
+#)
+#
+# Then we can add observations...
+#
+# for(i in 1:10){
+#   sis$add_observation(rnorm(1))
+# }
+#
+# ...and plot the posterior:
+#
+# hist(sis$get_iid_sample())
 
 SIS <- R6::R6Class(
   "SIS",
