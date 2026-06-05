@@ -1,29 +1,3 @@
-# Sequential Importance Sampling with Tempering
-#
-# The idea here is that if a particular observation causes too much
-# particle degeneracy, that is effective sample size gets too small, 
-# tempering is used for that observation to stabilize the algorithm.
-#
-# You can use either a pre-set number of tempering iterations or 
-# use the method $find_k(y) which tries to find the minimum amount
-# of tempering iterations to keep the effective sample size acceptable.
-#
-# The likelihood function should be vectorized wrt theta.
-# The posterior PDF should be vectorized wrt y.
-# Observations, y, should be a matrix, rows corresponding to indices.
-#
-#
-# LOGGING:
-# Initialize
-#  - Theta is drawn from the prior
-#  - Uniform weights
-# Add observation
-#  - y is appded to the data set
-#  - weights are updated
-#   - if necessary theta is resampled and moved
-#     - if tempering is used k is logged: t = length of y
-#     - During moving number of accepted particles is logged
-#  - theta and w are logged
 
 SIS <- R6::R6Class(
   "SIS",
