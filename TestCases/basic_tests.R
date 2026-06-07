@@ -93,12 +93,26 @@ sis_5 = SIS$new(
   )
 )
 
+sis_6 = SIS$new(
+  draw_from_prior = draw_from_prior,
+  prior = prior,
+  likelihood = likelihood,
+  n_particles = 5000,
+  opt = list(
+    logging = TRUE,
+    rejuvenation_limit = 1.2,
+    tempering_limit = -1.2,
+    n_rejuvenation_steps = 5
+  )
+)
+
 for(i in 1:n){
   sis_1$add_observation(y[i,,drop=FALSE])
   sis_2$add_observation(y[i,,drop=FALSE])
   sis_3$add_observation(y[i,,drop=FALSE])
   sis_4$add_observation(y[i,,drop=FALSE])
   sis_5$add_observation(y[i,,drop=FALSE])
+  sis_6$add_observation(y[i,,drop=FALSE])
 }
 
 target = function(x){
@@ -112,6 +126,7 @@ cat(
   kl_divergence(sis_3$get_iid_sample(), target),
   kl_divergence(sis_4$get_iid_sample(), target),
   kl_divergence(sis_5$get_iid_sample(), target),
+  kl_divergence(sis_6$get_iid_sample(), target),
   sep = "\n"
 )
 
