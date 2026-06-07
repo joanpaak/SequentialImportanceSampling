@@ -3,7 +3,6 @@
 #   y ~ normal(mu, 1.0)
 #
 
-
 source("sis_r6.R")
 
 gen_theta = cbind(c(4))
