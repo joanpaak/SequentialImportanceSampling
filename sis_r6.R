@@ -29,6 +29,7 @@
 # opt$tempering_limit  : number between 0 and 1. if n_eff/n_particles falls  
 #                        below this, the observation is added with tempering.
 # opt$logging          : boolean, should logging be done. 
+# opt$n_rejuvenation_steps : How many times the rejuvenation step is performed. 
 #
 # METHODS
 # 
@@ -88,7 +89,6 @@
 #
 # TODO:
 # - Improve logging
-# - Variable amount of rejuvenation steps
 # - Detect underflow when tempering with large k
 
 SIS <- R6::R6Class(
@@ -110,6 +110,7 @@ SIS <- R6::R6Class(
       auto_adjust_k = TRUE,
       min_k = 2,
       max_k = 40,
+      n_rejuvenation_steps = 1,
       logging = FALSE
     ),
     
@@ -211,7 +212,9 @@ SIS <- R6::R6Class(
         self$do_tempering(y)
       } else if(!n_eff_above_rejuvenation & n_eff_above_tempering){
         self$w <- update_result$w_updated
-        self$do_rejuvenation()
+        for(j in 1:self$opt$n_rejuvenation_steps){
+          self$do_rejuvenation()
+        }
       } else if(!n_eff_above_rejuvenation & !n_eff_above_tempering){
         self$do_tempering(y, force_rejuvenation = TRUE)
       }
@@ -261,7 +264,9 @@ SIS <- R6::R6Class(
         n_eff = (1.0 / sum(self$w^2)) / self$n_particles
         
         if(n_eff < self$opt$rejuvenation_limit | force_rejuvenation){
-          self$do_rejuvenation()
+          for(j in 1:self$opt$n_rejuvenation_steps){
+            self$do_rejuvenation()
+          }
           lh = self$likelihood(y, self$theta)^(1/self$opt$k)
         }
       }
