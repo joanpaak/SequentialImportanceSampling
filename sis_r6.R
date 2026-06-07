@@ -4,28 +4,31 @@
 # CALLING THE CONSTRUCTOR
 #
 # MANDATORY INPUTS:
-# draw_from_prior : function with one parameter n, should return a matrix of draws
-#                   from the prior with parameters on columns.
-# prior           : function for calculating the prior probability density for a matrix
-#                   of draws from the prior. Should return a vector containing p(theta)
-#                   for each row of the supplied matrix of draws.
-# likelihood      : function for calculating likelihood of a single observation given a
-#                   matrix of draws from the posterior. Should return a vector containing
-#                   p(y|theta) for each row of the supplied matrix of draws.
+# draw_from_prior : function with one parameter n, should return a matrix of 
+#                   draws from the prior with parameters on columns.
+# prior           : function for calculating the prior probability density for 
+#                   a matrix of draws from the prior. Should return a vector 
+#                   containing p(theta) for each row of the supplied matrix of 
+#                   draws.
+# likelihood      : function for calculating likelihood of a single observation 
+#                   given a matrix of draws from the posterior. Should return a 
+#                   vector containing p(y|theta) for each row of the supplied 
+#                   matrix of draws.
 # n_particles     : integer, the number of particles to use.
 #
 # OPTIONAL INPUTS:
 # opt             : List of options to set. The settable options are:
 # opt$k           : integer, a pre-set number of tempering steps.
 # opt$auto_adjust_k : boolean, should k be adjusted automatically.
-# opt$min_k         : integer, minimum number of tempering steps if auto-adjusting is used.
-# opt$max_k         : integer, maximum number of tempering steps if auto-adjusting is used.
-# opt$resampling_limit : number between 0 and 1. If n_eff/n_particles falls below this, 
-#                        a rejuvenation step is performed.
-# opt$tempering_limit  : number between 0 and 1. if n_eff/n_particles falls below this, the 
-#                        observation is added with tempering.
-# opt$logging          : boolean, should logging be done. E.g. particle set saved on each iteration,
-#                        number of proposals be saved, when temperng was used and so on.
+# opt$min_k         : integer, minimum number of tempering steps if 
+#                     auto-adjusting is used.
+# opt$max_k         : integer, maximum number of tempering steps if 
+#                     auto-adjusting is used.
+# opt$rejuvenation_limit : number between 0 and 1. If n_eff/n_particles falls 
+#                          below this, a rejuvenation step is performed.
+# opt$tempering_limit  : number between 0 and 1. if n_eff/n_particles falls  
+#                        below this, the observation is added with tempering.
+# opt$logging          : boolean, should logging be done. 
 #
 # METHODS
 # 
@@ -33,19 +36,23 @@
 #                      e.g. in linear regression observation pairs, each row of y
 #                      should correspond to a single observation. Set the optional argument
 #                      force_tempering to TRUE if you want to... force tempering!
+#                      Set the optional argument force_rejucenation to... you guessed it.
 #                      Adds the observation to an internal data matrix that's referenced 
 #                      during rejuvenation.
 # get_iid_sample()   : samples from the current posterior using the current weights
 # get_marginal_mus() : returns marginal means calculated using current weights
 # get_marginal_sds() : returns marginal sds calculated using current weights
 #
-# The following methods are typically used internally but can be useful for debugging or otherise
-# resample_and_move() : resamples using multinomial resampling, generates proposals and accepts them
-#                       according to their posterior probability
-# add_observation_with_tempering(y) : Same as above with tempering. NOTE: DOES NOT ADD THE OBSERVATION
-#                                     TO THE INTERNAL DATA MATRIX THAT IS USED FOR CALCULATING ACCEPTANCE
-#                                     PROBABILITIES. Use add_observation with the argument force_temperin = 
-#                                     TRUE if you want to add observation by hand and have tempering used.
+# The following methods are typically used internally but can 
+# be useful for debugging or otherwise:
+# do_rejuvenation()   : resamples using multinomial resampling, generates 
+#                       proposals and accepts them according to their posterior 
+#                       probability.
+# do_tempering(y) : Same as add_observation but with tempering. NOTE: 
+#                   DOES NOT ADD THE OBSERVATION TO THE INTERNAL DATA MATRIX
+#                   THAT IS USED FOR CALCULATING ACCEPTANCE PROBABILITIES.
+#                   Use add_observation with the argument force_tempering = 
+#                   TRUE if you want to make sure tempering is used.
 # posterior(theta, y) : calculation of posterior probabilities. 
 #
 # EXAMPLE:
@@ -78,6 +85,11 @@
 # ...and plot the posterior:
 #
 # hist(sis$get_iid_sample())
+#
+# TODO:
+# - Improve logging
+# - Variable amount of rejuvenation steps
+# - Detect underflow when tempering with large k
 
 SIS <- R6::R6Class(
   "SIS",
@@ -93,10 +105,10 @@ SIS <- R6::R6Class(
     
     opt = list(
       k = 5,
-      resampling_limit = 0.75,
+      rejuvenation_limit = 0.75,
       tempering_limit = 0.50,
       auto_adjust_k = TRUE,
-      min_k = 1,
+      min_k = 2,
       max_k = 40,
       logging = FALSE
     ),
@@ -125,10 +137,7 @@ SIS <- R6::R6Class(
       self$n_dim <- ncol(self$theta)
       self$likelihood <- likelihood
       self$prior <- prior
-      # NOTE: The proposal distribution might propose particles that
-      #       are beyond the support of the prior distribution. In
-      #       these cases useless warnings are generated which slow
-      #       the script down. 
+      
       self$posterior  <- function(theta, y){
         post_prob = self$prior(theta)
         non_zero_inds = which(post_prob > 0)
@@ -143,103 +152,130 @@ SIS <- R6::R6Class(
         
         return(post_prob)
       }
+      
       self$w <- rep(1.0 / self$n_particles, self$n_particles)
       self$y <- c()
       colnames(self$log$k) = c("t", "k")
       colnames(self$log$n_accepted) = c("t", "N accepted")
     },
     
-    add_observation = function(y, force_tempering = FALSE){
-      if(is.null(y)){
-        warning("y was NULL, assuming it is an empty observation")
-        y = matrix(NaN, nrow = 1)
-      }
-      if(!is.matrix(y)) y = rbind(y)
-      
-      self$y <- rbind(self$y, y)
-      p = self$likelihood(y, self$theta)
-      w_updated = p * self$w
+    # Calculates the updated weights given an observation. Mainly a 
+    # convenience method for doing error correction/emitting warnings
+    # in a single place.
+    #
+    # INPUT
+    #  y : a row of a data matrix
+    #  k : (optional) tempering constant for the likelihood
+    # OUTPUT
+    #  result$w_updated : the updated weights
+    #  result$n_eff     : the proportional effective sample size
+    get_updated_weights = function(y, k = 1){
+      w_updated = self$w * likelihood(y, self$theta)^(1/k)
       w_updated = w_updated / sum(w_updated)
       
-      n_eff = 1.0 / sum(w_updated^2)
+      if(any(is.nan(w_updated))){
+        warning("NaN values when updating weights, ",
+                "replacing them with zeroes.")
+        w_updated[is.nan(w_updated)] = 0
+      }
       
-      if(is.nan(n_eff)) n_eff = 0
+      n_eff = (1.0 / sum(w_updated^2)) / self$n_particles
       
-      if(n_eff < (self$n_particles * self$opt$tempering_limit) |
-         force_tempering){
-        if(self$opt$auto_adjust_k){
-          self$opt$k <- self$find_k(y) 
-        }
-        
-        self$add_observation_with_tempering(y)
-      } else if(n_eff < (self$n_particles * self$opt$resampling_limit)){
-        self$w <- w_updated
-        self$resample_and_move()
-      } else {
-        self$w <- w_updated
+      return(list(
+        w_updated = w_updated,
+        n_eff = n_eff
+      ))
+    },
+    
+    add_observation = function(y, 
+                               force_rejuvenation = FALSE, 
+                               force_tempering = FALSE){
+      if(is.null(y)) stop("y was null")
+      if(!is.matrix(y)) y = rbind(y)
+      
+      ## Add observation to the internal data matrix
+      self$y <- rbind(self$y, y)
+      
+      ## Update particle set
+      update_result = self$get_updated_weights(y)
+      
+      n_eff_above_rejuvenation = update_result$n_eff > self$opt$rejuvenation_limit
+      n_eff_above_tempering = update_result$n_eff > self$opt$tempering_limit
+      
+      if(force_tempering) n_eff_above_tempering = FALSE
+      if(force_rejuvenation) n_eff_above_rejuvenation = FALSE
+      
+      if(n_eff_above_rejuvenation & n_eff_above_tempering){
+        self$w <- update_result$w_updated
+      } else if(n_eff_above_rejuvenation & !n_eff_above_tempering){
+        self$do_tempering(y)
+      } else if(!n_eff_above_rejuvenation & n_eff_above_tempering){
+        self$w <- update_result$w_updated
+        self$do_rejuvenation()
+      } else if(!n_eff_above_rejuvenation & !n_eff_above_tempering){
+        self$do_tempering(y, force_rejuvenation = TRUE)
       }
       
       if(self$opt$logging){
-        self$log$particle_set[[length(self$log$particle_set) + 1]] = 
-          list(
-            w = self$w,
-            theta = self$theta
-          )
-        self$log$n_eff <- append(self$log$n_eff, 1.0 / sum(self$w^2))
+        self$log$particle_set[[nrow(self$y + 1)]] = list(
+          theta = self$theta,
+          w = self$w
+        )
       }
     },
-    
     
     # Tries to find the value of k (number of tempering iterations)
     # that would lead to effective sample size not collapsing below
     # the option "tempering limit".
-    find_k = function(y){
-      if(is.null(ncol(y))) y = rbind(y)
-
+    adjust_k = function(y){
       for(k in self$opt$min_k:self$opt$max_k){
-        p = self$likelihood(y, self$theta)^(1.0 / k)
-        w_updated = p * self$w
-        w_updated = w_updated / sum(w_updated)
+        update_result = self$get_updated_weights(y, k)
         
-        n_eff = 1.0 / sum(w_updated^2)
-        
-        if(is.nan(n_eff)) return(self$opt$max_k)
-        
-        if(n_eff > (self$n_particles * self$opt$tempering_limit)){
+        if(update_result$n_eff > self$opt$tempering_limit){
           return(k)
         }
       }
       
+      warning("Maximum iterations reached for finding k. ",
+              "Proportional n_eff after updating weights ", update_result$n_eff)
       return(self$opt$max_k)
     },
     
-    add_observation_with_tempering = function(y){
-      if(is.null(ncol(y))) y = rbind(y)
+    # Updates the weights using tempering and rejuvenation steps
+    # whenever n_eff falls below rejuvenation_limit during the 
+    # tempering. NOTE: Does not add y to the internal data matrix!
+    do_tempering = function(y, force_rejuvenation = FALSE){
+      if(self$opt$auto_adjust_k) self$opt$k = self$adjust_k(y)
+      if(self$opt$logging){
+        self$log$k <- rbind(
+          self$log$k,
+          c(nrow(self$y), self$opt$k)
+        )
+      }
       
-      if(self$opt$logging) {
-        self$log$k = rbind(self$log$k, 
-                           c(nrow(self$y), self$opt$k))
-      } 
+      lh = self$likelihood(y, self$theta)
       
       for(i in 1:self$opt$k){
-        lh = self$likelihood(y, self$theta)^(1.0 / self$opt$k)
-        self$w <- self$w * lh
-        self$w <- self$w / sum(self$w)
-        n_eff = (1.0 / sum(self$w^2))
+        self$w <- self$w * lh^(1/self$opt$k)
+        self$w = self$w / sum(self$w)
+        n_eff = (1.0 / sum(self$w^2)) / self$n_particles
         
-        if(is.nan(n_eff)){
-          self$resample_and_move()
-          return()
-        }
-        
-        if(n_eff < (self$n_particles * self$opt$resampling_limit)){
-          self$resample_and_move()
+        if(n_eff < self$opt$rejuvenation_limit | force_rejuvenation){
+          self$do_rejuvenation()
+          lh = self$likelihood(y, self$theta)^(1/self$opt$k)
         }
       }
     },
     
-    resample_and_move = function(){
-      # TODO: Implement stratified resampling?
+    # Performs the rejuvenation step. First resamples particles by using
+    # multinomial sampling, then generates proposals from a multidimensional
+    # Gaussian with means and standard deviations corresponding to the current
+    # posterior and then accepts/rejects those proposals using and independent
+    # Metropolis-Hastings kernel.
+    # 
+    # The internal data matrix is used when calculating acceptance proposals.
+    do_rejuvenation = function(){
+      # TODO: Implement stratified rejuvenation?
       rs_inds = sample(1:self$n_particles, self$n_particles, TRUE, self$w)
       theta_rs = self$theta[rs_inds,,drop = FALSE]
       theta_prop = matrix(NaN, ncol = self$n_dim, nrow = self$n_particles)
@@ -279,8 +315,8 @@ SIS <- R6::R6Class(
       self$w <- rep(1.0 / self$n_particles, self$n_particles)
       
       if(length(inds_accepted) < 10){
-        warning(paste("Rejuvenation failed, only", 
-                      length(inds_accepted), "accepted proposals"))
+        warning("Rejuvenation failed, only", 
+                 length(inds_accepted), "accepted proposals")
       }
       
       if(self$opt$logging){
@@ -291,25 +327,25 @@ SIS <- R6::R6Class(
     },
     
     get_marginal_mus = function(){
-			mus = rep(NaN, self$n_dim)
-			
-			for(i in 1:self$n_dim){
-				mus[i] = sum(self$theta[,i] * self$w)
-			}
-			
-			return(mus)
-		},
-		
-		get_marginal_sds = function(){
-			mus = self$get_marginal_mus()
-			sds = rep(NaN, self$n_dim)
-			
-			for(i in 1:self$n_dim){
-			  sds[i] = sqrt(sum((self$theta[,i] * self$w)^2))	
-			}
-			
-			return(sds)
-		},
+      mus = rep(NaN, self$n_dim)
+      
+      for(i in 1:self$n_dim){
+        mus[i] = sum(self$theta[,i] * self$w)
+      }
+      
+      return(mus)
+    },
+    
+    get_marginal_sds = function(){
+      mus = self$get_marginal_mus()
+      sds = rep(NaN, self$n_dim)
+      
+      for(i in 1:self$n_dim){
+        sds[i] = sqrt(sum((self$theta[,i] * self$w)^2))	
+      }
+      
+      return(sds)
+    },
     
     get_iid_sample = function(){
       rs_inds = sample(1:self$n_particles, self$n_particles, TRUE, self$w)
@@ -319,4 +355,3 @@ SIS <- R6::R6Class(
     }
   )
 )
-
