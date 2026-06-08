@@ -171,7 +171,7 @@ SIS <- R6::R6Class(
     #  result$w_updated : the updated weights
     #  result$n_eff     : the proportional effective sample size
     get_updated_weights = function(y, k = 1){
-      w_updated = self$w * likelihood(y, self$theta)^(1/k)
+      w_updated = self$w * self$likelihood(y, self$theta)^(1/k)
       w_updated = w_updated / sum(w_updated)
       
       if(any(is.nan(w_updated))){
