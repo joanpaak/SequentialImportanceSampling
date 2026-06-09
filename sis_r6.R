@@ -104,6 +104,7 @@ SIS <- R6::R6Class(
     posterior   = NULL,
     
     opt = list(
+      nu = 10,
       k = 5,
       rejuvenation_limit = 0.75,
       tempering_limit = 0.50,
@@ -292,7 +293,7 @@ SIS <- R6::R6Class(
         marg_mus[i] = sum(self$theta[,i] * self$w)
         marg_sds[i] = sqrt(sum((self$theta[,i] - marg_mus[i])^2 * self$w))
         
-        theta_prop[,i] = rnorm(self$n_particles, marg_mus[i], marg_sds[i])
+        theta_prop[,i] = rt(self$n_particles, self$opt$nu) * marg_sds[i] + marg_mus[i]
       }
       
       p_curr = rep(NaN, self$n_particles)
@@ -306,8 +307,8 @@ SIS <- R6::R6Class(
         # NOTE TO SELF: Remember that this is not the MH-kernel but
         # _independent_ MH kernel since the proposals are generated
         # from an independent distribution
-        mh_ratio[i] = prod(dnorm(theta_rs[i,], marg_mus, marg_sds)) / 
-          prod(dnorm(theta_prop[i,], marg_mus, marg_sds))
+        mh_ratio[i] = prod(dt((theta_rs[i,] - marg_mus) / marg_sds, self$opt$nu)) / 
+          prod(dt((theta_prop[i,] - marg_mus) / marg_sds, self$opt$nu))
       }
       
       p_accept = (p_prop / p_curr) * mh_ratio
