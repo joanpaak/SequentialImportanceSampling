@@ -18,6 +18,8 @@
 #
 # OPTIONAL INPUTS:
 # opt             : List of options to set. The settable options are:
+# opt$nu          : nu-parameter of the t-distribution that's used for
+#                   generating proposals
 # opt$k           : integer, a pre-set number of tempering steps.
 # opt$auto_adjust_k : boolean, should k be adjusted automatically.
 # opt$min_k         : integer, minimum number of tempering steps if 
